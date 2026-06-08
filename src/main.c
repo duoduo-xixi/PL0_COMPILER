@@ -1,0 +1,312 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "../include/common.h"
+#include "lexer.h"
+#include "lr_parser.h"
+#include "semantic.h"
+// ==================== 文件读取 ====================
+char* read_file(const char *filename) {
+    FILE *fp = fopen(filename, "r");
+    if (!fp) return NULL;
+
+    char *buffer = (char*)malloc(MAX_SOURCE_SIZE);
+    if (!buffer) { fclose(fp); return NULL; }
+
+    size_t len = fread(buffer, 1, MAX_SOURCE_SIZE - 1, fp);
+    buffer[len] = '\0';
+    fclose(fp);
+    return buffer;
+}
+
+// ==================== 运行模式 ====================
+typedef enum {
+    MODE_LEXER_ONLY,       // 仅词法分析
+    MODE_LEXER_PARSER,     // 词法 + 语法
+    MODE_FULL              // 词法 + 语法 + 语义
+} RunMode;
+
+// 仅运行词法分析（实验四）
+void run_lexer_only(const char *source_code) {
+    TokenList tl;
+    tokenize_all(source_code, &tl);
+
+    printf("\n========== 词法分析结果 ==========\n");
+    for (int i = 0; i < tl.count; i++) {
+        print_token_for_lexer(&tl.tokens[i]);
+    }
+    print_token_stats();
+
+    if (has_lex_error) {
+        printf("\n词法分析发现错误。\n");
+    }
+}
+
+// 运行词法 + 语法分析（实验五）
+void run_lexer_and_parser(const char *source_code) {
+    TokenList tl;
+
+    // 第一步：词法分析，产生TokenList
+    tokenize_all(source_code, &tl);
+
+    printf("\n========== 词法分析结果 ==========\n");
+    for (int i = 0; i < tl.count; i++) {
+        print_token_for_lexer(&tl.tokens[i]);
+    }
+    print_token_stats();
+
+    if (has_lex_error) {
+        printf("词法分析发现错误，停止后续分析。\n");
+        return;
+    }
+
+    // 第二步：语法分析，消费TokenList
+    printf("\n========== LR 语法分析 ==========\n");
+    ParseResult parse_result = lr_parse(&tl);
+
+    if (!parse_result.success) {
+        printf("语法分析发现错误。\n");
+        return;
+    }
+}
+
+// 运行完整编译流程：词法 → 语法 → 语义（实验六）
+void run_full_compiler(const char *source_code) {
+    TokenList tl;
+
+    // 第一步：词法分析，产生TokenList
+    tokenize_all(source_code, &tl);
+
+    printf("\n========== 词法分析结果 ==========\n");
+    for (int i = 0; i < tl.count; i++) {
+        print_token_for_lexer(&tl.tokens[i]);
+    }
+    print_token_stats();
+
+    if (has_lex_error) {
+        printf("词法分析发现错误，停止后续分析。\n");
+        return;
+    }
+
+    // 第二步：语法分析，消费TokenList
+    printf("\n========== LR 语法分析 ==========\n");
+    ParseResult parse_result = lr_parse(&tl);
+
+    if (!parse_result.success) {
+        printf("语法分析发现错误。\n");
+        return;
+    }
+
+    // 第三步：语义分析，重新消费TokenList
+    printf("\n========== 语义分析 ==========\n");
+    semantic_analyze(&tl);
+}
+
+// ==================== 测试用例定义 ====================
+typedef struct {
+    const char *filename;
+    const char *description;
+} TestCase;
+
+typedef struct {
+    const char *name;
+    const char *dir;
+    const TestCase *tests;
+    int count;
+    RunMode mode;
+} Experiment;
+
+// ---- 实验四：词法分析 ----
+static const TestCase e4_tests[] = {
+    {"e4_t1_correct.pl0", "正确词法测试"},
+    {"e4_t2_error.pl0",   "错误词法测试（非法字符/数字越界/标识符过长）"},
+};
+
+// ---- 实验五：语法分析 ----
+static const TestCase e5_tests[] = {
+    {"e5_t1_correct.pl0",      "正确语法测试"},
+    {"e5_t2_assign_error.pl0", "const a := 10（:= 代替 =）"},
+    {"e5_t3_no_begin.pl0",     "缺少程序头与 begin"},
+    {"e5_t4_no_do.pl0",        "while 缺少 do"},
+    {"e5_t5_multi_error.pl0",  "多个语法错误（8个错误）"},
+};
+
+// ---- 实验六：语义分析 ----
+static const TestCase e6_tests[] = {
+    {"e6_t1_correct.pl0",       "正确语义测试（含注释）"},
+    {"e6_t2_dup_declare.pl0",   "重复声明 a"},
+    {"e6_t3_read_proc.pl0",     "read(p)——p 是过程不是变量"},
+    {"e6_t4_undefined_proc.pl0","call q——q 未声明"},
+    {"e6_t5_multi_semantic.pl0","多个语义错误（4个错误）"},
+};
+
+static const Experiment experiments[] = {
+    {"实验四：词法分析", "tests/experiment4_lexer",   e4_tests, 2, MODE_LEXER_ONLY},
+    {"实验五：语法分析", "tests/experiment5_parser",  e5_tests, 5, MODE_LEXER_PARSER},
+    {"实验六：语义分析", "tests/experiment6_semantic", e6_tests, 5, MODE_FULL},
+};
+
+#define NUM_EXPERIMENTS (sizeof(experiments) / sizeof(experiments[0]))
+
+// ==================== 运行单个测试文件 ====================
+void run_test_file(const char *filepath, RunMode mode) {
+    char *source = read_file(filepath);
+    if (!source) {
+        printf("无法打开文件: %s\n", filepath);
+        return;
+    }
+
+    printf("\n----------------------------------------\n");
+    printf("源代码:\n%s\n", source);
+    printf("----------------------------------------\n");
+
+    switch (mode) {
+        case MODE_LEXER_ONLY:
+            run_lexer_only(source);
+            break;
+        case MODE_LEXER_PARSER:
+            run_lexer_and_parser(source);
+            break;
+        case MODE_FULL:
+            run_full_compiler(source);
+            break;
+    }
+
+    free(source);
+}
+
+// ==================== 运行一个实验的全部测试 ====================
+void run_experiment(const Experiment *exp) {
+    printf("\n========================================\n");
+    printf("  %s\n", exp->name);
+    printf("========================================\n");
+
+    for (int i = 0; i < exp->count; i++) {
+        char filepath[512];
+        snprintf(filepath, sizeof(filepath), "%s/%s", exp->dir, exp->tests[i].filename);
+
+        printf("\n--------------------------------------------------\n");
+        printf("[%d/%d] %s: %s\n", i + 1, exp->count,
+               exp->tests[i].filename, exp->tests[i].description);
+        printf("--------------------------------------------------\n");
+
+        run_test_file(filepath, exp->mode);
+    }
+}
+
+// ==================== 运行全部实验 ====================
+void run_all_experiments(void) {
+    for (int i = 0; i < NUM_EXPERIMENTS; i++) {
+        run_experiment(&experiments[i]);
+    }
+}
+
+// ==================== 自定义测试 ====================
+void run_custom_test(void) {
+    printf("\n请输入 .pl0 文件的路径: ");
+    char filepath[512];
+    if (!fgets(filepath, sizeof(filepath), stdin)) return;
+
+    // 去掉末尾换行符
+    size_t len = strlen(filepath);
+    while (len > 0 && (filepath[len - 1] == '\n' || filepath[len - 1] == '\r')) {
+        filepath[--len] = '\0';
+    }
+
+    if (len == 0) {
+        printf("未输入文件路径。\n");
+        return;
+    }
+
+    printf("\n请选择运行模式:\n");
+    printf("  1. 仅词法分析\n");
+    printf("  2. 词法 + 语法分析\n");
+    printf("  3. 完整编译（词法 + 语法 + 语义）\n");
+    printf("请输入选择 (1-3): ");
+
+    int choice;
+    if (scanf("%d", &choice) != 1) {
+        printf("无效选择。\n");
+        getchar();
+        return;
+    }
+    getchar();
+
+    RunMode mode;
+    switch (choice) {
+        case 1:  mode = MODE_LEXER_ONLY;    break;
+        case 2:  mode = MODE_LEXER_PARSER;  break;
+        case 3:  mode = MODE_FULL;          break;
+        default: printf("无效选择。\n");     return;
+    }
+
+    run_test_file(filepath, mode);
+}
+
+// ==================== 主菜单 ====================
+void show_menu(void) {
+    printf("\n");
+    printf("========================================\n");
+    printf("   PL/0 编译器 - 词法/语法/语义分析\n");
+    printf("========================================\n");
+    printf("\n选择测试用例 (按实验顺序):\n");
+    printf("  [1] 实验四：词法分析  (%d 个测试)\n", experiments[0].count);
+    printf("  [2] 实验五：语法分析  (%d 个测试)\n", experiments[1].count);
+    printf("  [3] 实验六：语义分析  (%d 个测试)\n", experiments[2].count);
+    printf("  [A] 运行全部测试（按实验四→五→六顺序）\n");
+    printf("  [C] 自定义测试（输入文件路径）\n");
+    printf("  [Q] 退出\n");
+    printf("请输入选择: ");
+}
+
+// ==================== 主函数 ====================
+int main(int argc, char *argv[]) {
+    system("chcp 65001 > nul");
+
+    if (argc >= 2) {
+        // 命令行模式：直接编译指定文件
+        char *source = read_file(argv[1]);
+        if (!source) {
+            printf("无法打开文件: %s\n", argv[1]);
+            return 1;
+        }
+        printf("读取文件: %s\n", argv[1]);
+        run_full_compiler(source);
+        free(source);
+        return 0;
+    }
+
+    // 交互式菜单
+    while (1) {
+        show_menu();
+
+        char line[32];
+        if (!fgets(line, sizeof(line), stdin)) break;
+
+        // 去掉换行符
+        size_t len = strlen(line);
+        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) {
+            line[--len] = '\0';
+        }
+
+        if (len == 0) continue;
+
+        char choice = line[0];
+
+        switch (choice) {
+            case '1': run_experiment(&experiments[0]); break;
+            case '2': run_experiment(&experiments[1]); break;
+            case '3': run_experiment(&experiments[2]); break;
+            case 'A': case 'a': run_all_experiments(); break;
+            case 'C': case 'c': run_custom_test();     break;
+            case 'Q': case 'q':
+                printf("退出。\n");
+                return 0;
+            default:
+                printf("无效选择，请重新输入。\n");
+                break;
+        }
+    }
+
+    return 0;
+}
