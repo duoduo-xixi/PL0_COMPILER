@@ -5,10 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Run
 
 ```bash
-make              # compile → ./pl0_compiler
-make run          # compile + interactive test menu
+make              # compile both CLI + GUI
+make run          # compile + interactive CLI test menu
+make gui          # compile + launch GUI
 make test         # compile + run tests/experiment5_parser/e5_t1_correct.pl0
-make clean        # remove obj/ and binary
+make clean        # remove obj/ and binaries
 ```
 
 Compile a single file (e.g. after editing one module):
@@ -32,6 +33,7 @@ GCC (MinGW on Windows). `obj/` must exist for `.o` files. All `#include` paths a
 | Lexer | `src/lexer.c` + `src/lexer.h` | Tokenizes source, exposes `current_token` global and `next_token()` |
 | Parser | `src/lr_parser.c` + `src/lr_parser.h` | Recursive-descent syntax check (named "LR" but actually uses recursive descent, not table-driven LR) |
 | Semantic | `src/semantic.c` + `src/semantic.h` | Symbol-table management + 4-address quad generation via recursive-descent; type-checks read/call targets |
+| GUI | `src/gui.c` + `src/gui.h` | Win32 API graphical interface: left source-input pane, right output pane, radio-button mode selection, test-case picker; captures stdout via `_dup`/`freopen` |
 | Entry point | `src/main.c` | File I/O, test-case management by experiment, drives pipeline with selectable run modes |
 
 ### Key design details
