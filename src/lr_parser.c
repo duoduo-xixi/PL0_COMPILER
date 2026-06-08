@@ -8,6 +8,8 @@ static TokenList *tl;
 #define LA (tl->tokens[tl->pos])
 
 static int parse_has_error = 0;
+static int panic_mode = 0;
+static int last_matched_line = 1;
 
 // 前向声明
 static void parse_program(void);
@@ -24,10 +26,17 @@ static void parse_factor(void);
 // 匹配当前Token并前进
 static void match(TokenType expected) {
     if (LA.type == expected) {
-        if (LA.type != TOK_EOF) tl->pos++;
+        if (LA.type != TOK_EOF) {
+            last_matched_line = LA.line_no;
+            tl->pos++;
+        }
+        panic_mode = 0;
     } else {
-        parse_has_error = 1;
-        printf("(语法错误,行号:%d)\n", LA.line_no);
+        if (!panic_mode) {
+            parse_has_error = 1;
+            printf("(语法错误,行号:%d)\n", last_matched_line);
+            panic_mode = 1;
+        }
         // 错误恢复：跳过Token直到找到同步符号
         while (LA.type != TOK_SEMI &&
                LA.type != TOK_END &&
@@ -36,9 +45,13 @@ static void match(TokenType expected) {
                LA.type != TOK_PERIOD) {
             if (LA.type != TOK_EOF) tl->pos++;
         }
-        // 如果期望的符号出现了，消费它
+        // 如果恢复到的同步符号恰好是期望的符号，消费它并退出panic
         if (LA.type == expected) {
-            if (LA.type != TOK_EOF) tl->pos++;
+            if (LA.type != TOK_EOF) {
+                last_matched_line = LA.line_no;
+                tl->pos++;
+            }
+            panic_mode = 0;
         }
     }
 }
@@ -47,9 +60,9 @@ static void match(TokenType expected) {
 static void parse_program(void) {
     parse_block();
     match(TOK_PERIOD);
-    if (LA.type != TOK_EOF) {
+    if (LA.type != TOK_EOF && !panic_mode) {
         parse_has_error = 1;
-        printf("(语法错误,行号:%d)\n", LA.line_no);
+        printf("(语法错误,行号:%d)\n", last_matched_line);
     }
 }
 
@@ -176,8 +189,11 @@ static void parse_condition(void) {
             LA.type == TOK_GT || LA.type == TOK_GE) {
             match(LA.type);
         } else {
-            parse_has_error = 1;
-            printf("(语法错误,行号:%d)\n", LA.line_no);
+            if (!panic_mode) {
+                parse_has_error = 1;
+                printf("(语法错误,行号:%d)\n", last_matched_line);
+                panic_mode = 1;
+            }
         }
         parse_expression();
     }
@@ -219,8 +235,11 @@ static void parse_factor(void) {
             match(TOK_RPAREN);
             break;
         default:
-            parse_has_error = 1;
-            printf("(语法错误,行号:%d)\n", LA.line_no);
+            if (!panic_mode) {
+                parse_has_error = 1;
+                printf("(语法错误,行号:%d)\n", last_matched_line);
+                panic_mode = 1;
+            }
             break;
     }
 }
@@ -232,6 +251,8 @@ ParseResult lr_parse(TokenList *token_list) {
     result.error_line = 0;
 
     parse_has_error = 0;
+    panic_mode = 0;
+    last_matched_line = 1;
     tl = token_list;
     tl->pos = 0;
 

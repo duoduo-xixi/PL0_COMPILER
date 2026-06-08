@@ -473,6 +473,7 @@ static char* parse_factor(void) {
 void semantic_analyze(TokenList *token_list) {
     init_symbol_table();
     init_quads();
+    semantic_has_error = 0;
 
     tl = token_list;
     tl->pos = 0;

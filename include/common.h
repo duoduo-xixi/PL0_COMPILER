@@ -40,12 +40,25 @@ typedef enum {
     TOK_EOF, TOK_ERROR
 } TokenType;
 
+// 错误类型（必须在Token之前定义）
+typedef enum {
+    ERR_LEX_ILLEGAL_CHAR,
+    ERR_LEX_INVALID_IDENT,
+    ERR_LEX_NUM_TOO_LONG,
+    ERR_LEX_IDENT_TOO_LONG,
+    ERR_SYNTAX,
+    ERR_SEM_DUPLICATE,
+    ERR_SEM_UNDECLARED,
+    ERR_SEM_TYPE_MISMATCH
+} ErrorType;
+
 // Token结构
 typedef struct {
     TokenType type;
     char lexeme[MAX_TOKEN_LEN];
     int line_no;
     int value;
+    ErrorType error_type;   // 仅当 type==TOK_ERROR 时有效
 } Token;
 
 // Token列表 — 词法分析输出，供语法/语义分析消费
@@ -76,17 +89,5 @@ typedef struct {
     char arg2[16];  // 第二操作数
     char result[16]; // 结果
 } Quad;
-
-// 错误类型
-typedef enum {
-    ERR_LEX_ILLEGAL_CHAR,
-    ERR_LEX_INVALID_IDENT,
-    ERR_LEX_NUM_TOO_LONG,
-    ERR_LEX_IDENT_TOO_LONG,
-    ERR_SYNTAX,
-    ERR_SEM_DUPLICATE,
-    ERR_SEM_UNDECLARED,
-    ERR_SEM_TYPE_MISMATCH
-} ErrorType;
 
 #endif

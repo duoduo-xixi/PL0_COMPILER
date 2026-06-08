@@ -186,11 +186,14 @@ void next_token(void) {
             current_token.type = TOK_IDENT;
             // 非关键字的标识符才检查长度
             if (i > MAX_IDENT_LEN) {
+                current_token.type = TOK_ERROR;
+                current_token.error_type = ERR_LEX_IDENT_TOO_LONG;
                 has_lex_error = 1;
-                printf("(标识符长度超长,%s,行号:%d)\n", current_token.lexeme, current_line);
             }
         }
-        token_count_by_type[current_token.type]++;
+        if (current_token.type != TOK_ERROR) {
+            token_count_by_type[current_token.type]++;
+        }
         return;
     }
 
@@ -220,18 +223,21 @@ void next_token(void) {
             }
             current_token.lexeme[i] = '\0';
             has_lex_error = 1;
-            printf("(非法字符(串),%s,行号:%d)\n", current_token.lexeme, current_line);
             current_token.type = TOK_ERROR;
+            current_token.error_type = ERR_LEX_INVALID_IDENT;
             return;
         }
 
         // 检查数字长度
         if (i > MAX_NUM_LEN) {
+            current_token.type = TOK_ERROR;
+            current_token.error_type = ERR_LEX_NUM_TOO_LONG;
             has_lex_error = 1;
-            printf("(无符号整数越界,%s,行号:%d)\n", current_token.lexeme, current_line);
         }
 
-        token_count_by_type[TOK_NUMBER]++;
+        if (current_token.type != TOK_ERROR) {
+            token_count_by_type[TOK_NUMBER]++;
+        }
         return;
     }
 
@@ -304,10 +310,10 @@ void next_token(void) {
                 pos += 2;
             } else {
                 current_token.type = TOK_ERROR;
+                current_token.error_type = ERR_LEX_ILLEGAL_CHAR;
                 current_token.lexeme[0] = ':'; current_token.lexeme[1] = '\0';
                 pos++;
                 has_lex_error = 1;
-                printf("[词法错误] 非法字符 ':' (行号:%d)，可能你想要 := ?\n", current_line);
             }
             break;
         case ',':
@@ -336,12 +342,11 @@ void next_token(void) {
             pos++;
             break;
         default:
-            // 非法字符
             current_token.type = TOK_ERROR;
+            current_token.error_type = ERR_LEX_ILLEGAL_CHAR;
             current_token.lexeme[0] = ch; current_token.lexeme[1] = '\0';
             pos++;
             has_lex_error = 1;
-            printf("(非法字符(串),%c,行号:%d)\n", ch, current_line);
             break;
     }
 
@@ -414,6 +419,22 @@ void print_token_for_lexer(Token *t) {
         case TOK_COMMA: case TOK_SEMI: case TOK_PERIOD:
         case TOK_LPAREN: case TOK_RPAREN:
             printf("(界符,%s)\n", t->lexeme);
+            break;
+        case TOK_ERROR:
+            switch (t->error_type) {
+                case ERR_LEX_ILLEGAL_CHAR:
+                case ERR_LEX_INVALID_IDENT:
+                    printf("(非法字符(串),%s,行号:%d)\n", t->lexeme, t->line_no);
+                    break;
+                case ERR_LEX_NUM_TOO_LONG:
+                    printf("(无符号整数越界,%s,行号:%d)\n", t->lexeme, t->line_no);
+                    break;
+                case ERR_LEX_IDENT_TOO_LONG:
+                    printf("(标识符长度超长,%s,行号:%d)\n", t->lexeme, t->line_no);
+                    break;
+                default:
+                    break;
+            }
             break;
         case TOK_EOF:
             break;

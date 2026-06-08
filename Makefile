@@ -16,7 +16,7 @@ $(TARGET): $(OBJS)
 $(GUI_TARGET): $(GUI_OBJS)
 	$(CC) $(CFLAGS) -mwindows -o $(GUI_TARGET) $(GUI_OBJS)
 
-obj/%.o: src/%.c
+obj/%.o: src/%.c include/common.h src/lexer.h src/lr_parser.h src/semantic.h
 	@-mkdir obj 2>nul
 	$(CC) $(CFLAGS) -c $< -o $@
 
