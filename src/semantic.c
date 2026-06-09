@@ -340,7 +340,7 @@ static void parse_statement(void) {
                 semantic_error(ERR_SYNTAX, LA.line_no, "缺少变量名");
                 return;
             }
-            check_declared(LA.lexeme, LA.line_no);
+            check_is_variable(LA.lexeme, LA.line_no);
             add_quad("read", LA.lexeme, "_", "_");
             match(TOK_IDENT);
         }

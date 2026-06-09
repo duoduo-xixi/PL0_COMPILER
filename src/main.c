@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <io.h>
+#include <direct.h>
 #include "../include/common.h"
 #include "lexer.h"
 #include "lr_parser.h"
@@ -149,7 +151,7 @@ static const Experiment experiments[] = {
 #define NUM_EXPERIMENTS (sizeof(experiments) / sizeof(experiments[0]))
 
 // ==================== 运行单个测试文件 ====================
-void run_test_file(const char *filepath, RunMode mode) {
+void run_test_file(const char *filepath, RunMode mode, const char *output_path) {
     char *source = read_file(filepath);
     if (!source) {
         printf("无法打开文件: %s\n", filepath);
@@ -159,6 +161,17 @@ void run_test_file(const char *filepath, RunMode mode) {
     printf("\n----------------------------------------\n");
     printf("源代码:\n%s\n", source);
     printf("----------------------------------------\n");
+
+    int saved_fd = -1;
+    if (output_path) {
+        saved_fd = _dup(1);
+        if (saved_fd != -1) {
+            if (!freopen(output_path, "w", stdout)) {
+                _close(saved_fd);
+                saved_fd = -1;
+            }
+        }
+    }
 
     switch (mode) {
         case MODE_LEXER_ONLY:
@@ -172,6 +185,22 @@ void run_test_file(const char *filepath, RunMode mode) {
             break;
     }
 
+    if (saved_fd != -1) {
+        fflush(stdout);
+        _dup2(saved_fd, 1);
+        _close(saved_fd);
+        clearerr(stdout);
+        setvbuf(stdout, NULL, _IONBF, 0);
+
+        // 回显文件内容到控制台
+        char *result = read_file(output_path);
+        if (result) {
+            printf("%s", result);
+            free(result);
+        }
+        printf("[结果已保存到: %s]\n", output_path);
+    }
+
     free(source);
 }
 
@@ -180,6 +209,14 @@ void run_experiment(const Experiment *exp) {
     printf("\n========================================\n");
     printf("  %s\n", exp->name);
     printf("========================================\n");
+
+    // 创建输出目录: output/<实验目录名>
+    char out_dir[512];
+    const char *dir_name = strrchr(exp->dir, '/');
+    dir_name = dir_name ? dir_name + 1 : exp->dir;
+    _mkdir("output");
+    snprintf(out_dir, sizeof(out_dir), "output/%s", dir_name);
+    _mkdir(out_dir);
 
     for (int i = 0; i < exp->count; i++) {
         char filepath[512];
@@ -190,7 +227,15 @@ void run_experiment(const Experiment *exp) {
                exp->tests[i].filename, exp->tests[i].description);
         printf("--------------------------------------------------\n");
 
-        run_test_file(filepath, exp->mode);
+        // 构造输出路径: output/<实验目录>/<测试名>.txt
+        char out_path[512];
+        const char *dot = strrchr(exp->tests[i].filename, '.');
+        int base_len = dot ? (int)(dot - exp->tests[i].filename)
+                           : (int)strlen(exp->tests[i].filename);
+        snprintf(out_path, sizeof(out_path), "%s/%.*s.txt",
+                 out_dir, base_len, exp->tests[i].filename);
+
+        run_test_file(filepath, exp->mode, out_path);
     }
 }
 
@@ -240,7 +285,21 @@ void run_custom_test(void) {
         default: printf("无效选择。\n");     return;
     }
 
-    run_test_file(filepath, mode);
+    // 构造输出路径: output/custom/<文件名>.txt
+    char out_path[512];
+    {
+        const char *filename = strrchr(filepath, '/');
+        if (!filename) filename = strrchr(filepath, '\\');
+        filename = filename ? filename + 1 : filepath;
+        const char *dot = strrchr(filename, '.');
+        int base_len = dot ? (int)(dot - filename) : (int)strlen(filename);
+        _mkdir("output");
+        _mkdir("output/custom");
+        snprintf(out_path, sizeof(out_path), "output/custom/%.*s.txt",
+                 base_len, filename);
+    }
+
+    run_test_file(filepath, mode, out_path);
 }
 
 // ==================== 主菜单 ====================
@@ -265,14 +324,20 @@ int main(int argc, char *argv[]) {
 
     if (argc >= 2) {
         // 命令行模式：直接编译指定文件
-        char *source = read_file(argv[1]);
-        if (!source) {
-            printf("无法打开文件: %s\n", argv[1]);
-            return 1;
+        {
+            // 构造输出路径: output/custom/<文件名>.txt
+            const char *fn = strrchr(argv[1], '/');
+            if (!fn) fn = strrchr(argv[1], '\\');
+            fn = fn ? fn + 1 : argv[1];
+            const char *dot = strrchr(fn, '.');
+            int base_len = dot ? (int)(dot - fn) : (int)strlen(fn);
+            char out_path[512];
+            _mkdir("output");
+            _mkdir("output/custom");
+            snprintf(out_path, sizeof(out_path), "output/custom/%.*s.txt",
+                     base_len, fn);
+            run_test_file(argv[1], MODE_FULL, out_path);
         }
-        printf("读取文件: %s\n", argv[1]);
-        run_full_compiler(source);
-        free(source);
         return 0;
     }
 

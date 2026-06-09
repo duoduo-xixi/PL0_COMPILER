@@ -9,6 +9,7 @@
 #include "../include/common.h"
 #include <stdio.h>
 #include <io.h>
+#include <windowsx.h>        // GET_X_LPARAM / GET_Y_LPARAM
 #include <richedit.h>        // Rich Edit 控件支持
 
 // ==================== 控件 ID ====================
@@ -19,6 +20,7 @@
 #define IDC_RADIO_LEXER    1005
 #define IDC_RADIO_PARSER   1006
 #define IDC_RADIO_SEMANTIC 1007
+#define IDC_LINE_NUMBERS   1008
 
 // ==================== 布局常量 ====================
 #define MARGIN        10
@@ -26,6 +28,7 @@
 #define LABEL_H       20
 #define MIDDLE_W      130
 #define TEST_LIST_H   150
+#define LINE_NUM_W    45
 
 // ==================== 全局状态 ====================
 static HWND g_hSourceEdit;
@@ -35,7 +38,11 @@ static HWND g_hRunButton;
 static HWND g_hRadioLexer;
 static HWND g_hRadioParser;
 static HWND g_hRadioSemantic;
+static HWND g_hLineNumbers;    // 行号面板
 static HWND g_hMainWnd;
+
+static WNDPROC g_oldSourceProc;  // 源代码Edit原始窗口过程
+static WNDPROC g_oldLineNumProc; // 行号面板原始窗口过程
 
 static HFONT g_hCodeFont;
 static HFONT g_hArrowFont;
@@ -355,8 +362,15 @@ static void layout_controls(int client_w, int client_h) {
     if (h) SetWindowPos(h, NULL, MARGIN, MARGIN, left_w, LABEL_H,
                         SWP_NOZORDER | SWP_NOACTIVATE);
 
+    // 行号面板
+    SetWindowPos(g_hLineNumbers, NULL,
+                 MARGIN, MARGIN + LABEL_H, LINE_NUM_W, src_edit_h,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+
+    // 源代码编辑框（紧挨行号面板右侧）
     SetWindowPos(g_hSourceEdit, NULL,
-                 MARGIN, MARGIN + LABEL_H, left_w, src_edit_h,
+                 MARGIN + LINE_NUM_W + 1, MARGIN + LABEL_H,
+                 left_w - LINE_NUM_W - 1, src_edit_h,
                  SWP_NOZORDER | SWP_NOACTIVATE);
 
     int test_label_y = MARGIN + LABEL_H + src_edit_h + GAP;
@@ -415,6 +429,60 @@ static void create_fonts(void) {
         CLEARTYPE_QUALITY, FF_DONTCARE, L"Microsoft YaHei UI");
 }
 
+// ==================== 行号面板子类化 ====================
+static LRESULT CALLBACK LineNumProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+        case WM_SETCURSOR:
+            SetCursor(LoadCursorW(NULL, (LPCWSTR)IDC_HAND));
+            return TRUE;
+
+        case WM_LBUTTONDOWN: {
+            // 将行号面板上的点击坐标转换为源代码框坐标系，用 EDIT 自身算行号
+            POINT pt;
+            pt.x = GET_X_LPARAM(lParam);
+            pt.y = GET_Y_LPARAM(lParam);
+            ClientToScreen(hWnd, &pt);
+            ScreenToClient(g_hSourceEdit, &pt);
+
+            int char_idx = (int)SendMessageW(g_hSourceEdit, EM_CHARFROMPOS, 0,
+                                             (LPARAM)MAKELPARAM(pt.x, pt.y));
+            int line_idx = (int)SendMessageW(g_hSourceEdit, EM_LINEFROMCHAR, char_idx, 0);
+            int line_cnt = (int)SendMessageW(g_hSourceEdit, EM_GETLINECOUNT, 0, 0);
+            if (line_idx < 0 || line_idx >= line_cnt) break;
+
+            int line_start = (int)SendMessageW(g_hSourceEdit, EM_LINEINDEX, line_idx, 0);
+            int line_len   = (int)SendMessageW(g_hSourceEdit, EM_LINELENGTH, line_start, 0);
+            SendMessageW(g_hSourceEdit, EM_SETSEL, line_start, line_start + line_len);
+            SetFocus(g_hSourceEdit);
+            return 0;
+        }
+    }
+    return CallWindowProc(g_oldLineNumProc, hWnd, msg, wParam, lParam);
+}
+
+// ==================== 源代码编辑框子类化 ====================
+static LRESULT CALLBACK SourceEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    LRESULT result = CallWindowProc(g_oldSourceProc, hWnd, msg, wParam, lParam);
+
+    switch (msg) {
+        case WM_VSCROLL:
+        case WM_MOUSEWHEEL:
+        case WM_KEYDOWN:
+        case WM_CHAR:
+        case WM_PASTE:
+        case WM_CUT:
+        case WM_CLEAR:
+        case WM_UNDO:
+        case WM_SETTEXT:
+        case WM_SIZE:
+            if (g_hLineNumbers)
+                InvalidateRect(g_hLineNumbers, NULL, TRUE);
+            break;
+    }
+
+    return result;
+}
+
 // ==================== 窗口过程 ====================
 static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
@@ -430,12 +498,26 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
                           MARGIN, MARGIN, 300, LABEL_H,
                           hWnd, (HMENU)2000, hInst, NULL);
 
+            // 行号面板（与源代码框同边框 + SS_NOTIFY 支持点击通知父窗口）
+            g_hLineNumbers = CreateWindowExW(
+                WS_EX_CLIENTEDGE, L"STATIC", L"",
+                WS_CHILD | WS_VISIBLE | SS_OWNERDRAW | SS_NOTIFY,
+                MARGIN, MARGIN + LABEL_H, LINE_NUM_W, 300,
+                hWnd, (HMENU)IDC_LINE_NUMBERS, hInst, NULL);
+            g_oldLineNumProc = (WNDPROC)SetWindowLongPtrW(
+                g_hLineNumbers, GWLP_WNDPROC, (LONG_PTR)LineNumProc);
+
             g_hSourceEdit = CreateWindowExW(
                 WS_EX_CLIENTEDGE, L"EDIT", L"",
                 WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL |
                 ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_WANTRETURN,
-                MARGIN, MARGIN + LABEL_H, 300, 300,
+                MARGIN + LINE_NUM_W + 1, MARGIN + LABEL_H, 300 - LINE_NUM_W - 1, 300,
                 hWnd, (HMENU)IDC_SOURCE_EDIT, hInst, NULL);
+
+            // 子类化源代码编辑框，同步行号滚动
+            g_oldSourceProc = (WNDPROC)SetWindowLongPtrW(
+                g_hSourceEdit, GWLP_WNDPROC, (LONG_PTR)SourceEditProc);
+            InvalidateRect(g_hLineNumbers, NULL, TRUE);  // 首次绘制行号
 
             CreateWindowW(L"STATIC", L"测试用例（点击加载到输入框）",
                           WS_CHILD | WS_VISIBLE,
@@ -520,6 +602,14 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
             return 0;
         }
 
+        case WM_SETCURSOR:
+            // wParam 是鼠标所在子窗口的句柄
+            if ((HWND)wParam == g_hLineNumbers) {
+                SetCursor(LoadCursorW(NULL, (LPCWSTR)IDC_HAND));
+                return TRUE;
+            }
+            break;
+
         case WM_COMMAND: {
             int id = LOWORD(wParam), code = HIWORD(wParam);
             switch (id) {
@@ -545,6 +635,58 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
             return 0;
         }
 
+        case WM_DRAWITEM: {
+            DRAWITEMSTRUCT *dis = (DRAWITEMSTRUCT*)lParam;
+            if (dis->CtlID != IDC_LINE_NUMBERS) break;
+
+            // 获取源代码编辑框的滚动状态
+            int first_vis = (int)SendMessageW(g_hSourceEdit, EM_GETFIRSTVISIBLELINE, 0, 0);
+            int line_cnt  = (int)SendMessageW(g_hSourceEdit, EM_GETLINECOUNT, 0, 0);
+            if (first_vis < 0) first_vis = 0;
+
+            // 获取字体度量（与源代码编辑框同字体）
+            HFONT hFont = (HFONT)SendMessageW(g_hSourceEdit, WM_GETFONT, 0, 0);
+            HFONT hOldFont = SelectObject(dis->hDC, hFont);
+            TEXTMETRICW tm;
+            GetTextMetricsW(dis->hDC, &tm);
+            int line_h = tm.tmHeight;
+            SelectObject(dis->hDC, hOldFont);
+
+            // 绘制背景
+            HBRUSH hBg = CreateSolidBrush(RGB(240, 240, 240));
+            FillRect(dis->hDC, &dis->rcItem, hBg);
+            DeleteObject(hBg);
+
+            // 右侧分隔线
+            int sep_x = dis->rcItem.right - 2;
+            HPEN hPen = CreatePen(PS_SOLID, 1, RGB(210, 210, 210));
+            HPEN hOldPen = SelectObject(dis->hDC, hPen);
+            MoveToEx(dis->hDC, sep_x, dis->rcItem.top, NULL);
+            LineTo(dis->hDC, sep_x, dis->rcItem.bottom);
+            SelectObject(dis->hDC, hOldPen);
+            DeleteObject(hPen);
+
+            // 绘制行号（与源代码框同 WS_EX_CLIENTEDGE 边框 + 同字体，高度对齐）
+            int vis_lines = (dis->rcItem.bottom - dis->rcItem.top + line_h - 1) / line_h;
+            int last_line = first_vis + vis_lines;
+            if (last_line > line_cnt) last_line = line_cnt;
+
+            SetTextColor(dis->hDC, RGB(150, 150, 150));
+            SetBkMode(dis->hDC, TRANSPARENT);
+            hOldFont = SelectObject(dis->hDC, hFont);
+
+            for (int i = first_vis; i < last_line; i++) {
+                WCHAR buf[16];
+                wsprintfW(buf, L"%d", i + 1);
+                int y = dis->rcItem.top + (i - first_vis) * line_h;
+                RECT r = {dis->rcItem.left + 4, y, sep_x - 6, y + line_h};
+                DrawTextW(dis->hDC, buf, -1, &r, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+            }
+
+            SelectObject(dis->hDC, hOldFont);
+            return TRUE;
+        }
+
         case WM_CTLCOLORSTATIC: {
             HDC hdc = (HDC)wParam;
             int cid = GetDlgCtrlID((HWND)lParam);
@@ -558,6 +700,10 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
         }
 
         case WM_DESTROY: {
+            // 恢复子类化
+            SetWindowLongPtrW(g_hLineNumbers, GWLP_WNDPROC, (LONG_PTR)g_oldLineNumProc);
+            SetWindowLongPtrW(g_hSourceEdit, GWLP_WNDPROC, (LONG_PTR)g_oldSourceProc);
+
             int count = (int)SendMessageW(g_hTestList, LB_GETCOUNT, 0, 0);
             for (int i = 0; i < count; i++) {
                 char *p = (char*)SendMessageW(g_hTestList, LB_GETITEMDATA, i, 0);
