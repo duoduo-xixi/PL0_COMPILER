@@ -6,6 +6,7 @@
 #include "lexer.h"           // → includes common.h (defines our TokenType)
 #include "lr_parser.h"
 #include "semantic.h"
+#include "experiment3/e3_tasks.h"
 #include "../include/common.h"
 #include <stdio.h>
 #include <io.h>
@@ -20,7 +21,8 @@
 #define IDC_RADIO_LEXER    1005
 #define IDC_RADIO_PARSER   1006
 #define IDC_RADIO_SEMANTIC 1007
-#define IDC_LINE_NUMBERS   1008
+#define IDC_RADIO_EXP3     1008
+#define IDC_LINE_NUMBERS   1009
 
 // ==================== 布局常量 ====================
 #define MARGIN        10
@@ -38,6 +40,7 @@ static HWND g_hRunButton;
 static HWND g_hRadioLexer;
 static HWND g_hRadioParser;
 static HWND g_hRadioSemantic;
+static HWND g_hRadioExp3;
 static HWND g_hLineNumbers;    // 行号面板
 static HWND g_hMainWnd;
 
@@ -48,7 +51,7 @@ static HFONT g_hCodeFont;
 static HFONT g_hArrowFont;
 static HFONT g_hLabelFont;
 
-// 0=词法, 1=语法, 2=语义
+// 0=词法, 1=语法, 2=语义, 3=实验三
 static int g_analysis_mode = 2;
 
 // ==================== 编码转换 ====================
@@ -156,7 +159,6 @@ static void run_lexer_only(const char *source) {
     printf("\r\n========== 词法分析结果 ==========\r\n");
     for (int i = 0; i < tl.count; i++)
         print_token_for_lexer(&tl.tokens[i]);
-    print_token_stats();
 
     if (has_lex_error)
         printf("\r\n词法分析发现错误。\r\n");
@@ -169,14 +171,12 @@ static void run_lexer_and_parser(const char *source) {
     printf("\r\n========== 词法分析结果 ==========\r\n");
     for (int i = 0; i < tl.count; i++)
         print_token_for_lexer(&tl.tokens[i]);
-    print_token_stats();
 
     if (has_lex_error) {
         printf("\r\n词法分析发现错误，停止后续分析。\r\n");
         return;
     }
 
-    printf("\r\n========== LR 语法分析 ==========\r\n");
     ParseResult pr = lr_parse(&tl);
     if (!pr.success)
         printf("语法分析发现错误。\r\n");
@@ -189,14 +189,12 @@ static void run_full_compiler(const char *source) {
     printf("\r\n========== 词法分析结果 ==========\r\n");
     for (int i = 0; i < tl.count; i++)
         print_token_for_lexer(&tl.tokens[i]);
-    print_token_stats();
 
     if (has_lex_error) {
         printf("\r\n词法分析发现错误，停止后续分析。\r\n");
         return;
     }
 
-    printf("\r\n========== LR 语法分析 ==========\r\n");
     ParseResult pr = lr_parse(&tl);
     if (!pr.success) {
         printf("语法分析发现错误。\r\n");
@@ -207,24 +205,39 @@ static void run_full_compiler(const char *source) {
     semantic_analyze(&tl);
 }
 
+// 实验三子任务由调用方通过全局变量指定
+static int g_e3_subtask = 0;
+
+static void run_experiment3_dispatch(const char *source) {
+    printf("\r\n========== 实验三：Lex和yacc的使用 ==========\r\n");
+    switch (g_e3_subtask) {
+        case 0: printf("── 任务1-1：密文字符频率分析 ──\r\n\r\n"); e3_task1_freq(source); break;
+        case 1: printf("── 任务1-2：识别单词、数字和符号 ──\r\n\r\n"); e3_task2_tokenizer(source); break;
+        case 2: printf("── 任务1-3：具有加法和乘法功能的计算器 ──\r\n\r\n"); e3_task3_calc(source); break;
+    }
+}
+
 // ==================== 测试用例发现 ====================
 static void populate_test_list(void) {
     const char *exp_dirs[] = {
+        "tests/experiment3_lex_yacc",
         "tests/experiment4_lexer",
         "tests/experiment5_parser",
         "tests/experiment6_semantic"
     };
     const WCHAR *exp_labels[] = {
+        L"── 实验三：Lex和yacc的使用 ──",
         L"── 实验四：词法分析 ──",
         L"── 实验五：语法分析 ──",
         L"── 实验六：语义分析 ──"
     };
 
-    for (int e = 0; e < 3; e++) {
+    for (int e = 0; e < 4; e++) {
         SendMessageW(g_hTestList, LB_ADDSTRING, 0, (LPARAM)exp_labels[e]);
 
         char pattern[MAX_PATH];
-        snprintf(pattern, sizeof(pattern), "%s/*.pl0", exp_dirs[e]);
+        const char *ext = strstr(exp_dirs[e], "experiment3") ? "*.txt" : "*.pl0";
+        snprintf(pattern, sizeof(pattern), "%s/%s", exp_dirs[e], ext);
 
         WIN32_FIND_DATAA fd;
         HANDLE hFind = FindFirstFileA(pattern, &fd);
@@ -276,9 +289,10 @@ static void do_analysis(void) {
 
     AnalysisFunc func;
     switch (g_analysis_mode) {
-        case 0: func = run_lexer_only;      break;
-        case 1: func = run_lexer_and_parser; break;
-        default: func = run_full_compiler;   break;
+        case 0: func = run_lexer_only;            break;
+        case 1: func = run_lexer_and_parser;       break;
+        case 3: func = run_experiment3_dispatch;   break;
+        default: func = run_full_compiler;         break;
     }
 
     SetWindowTextW(g_hOutputEdit, L"正在分析...\r\n");
@@ -328,18 +342,30 @@ static void load_test_case(int idx) {
         free(wsource);
     }
 
-    if (strstr(path, "experiment4")) {
+    if (strstr(path, "experiment3")) {
+        g_analysis_mode = 3;
+        if (strstr(path, "e3_t1_freq"))      g_e3_subtask = 0;
+        else if (strstr(path, "e3_t2_tokenizer")) g_e3_subtask = 1;
+        else if (strstr(path, "e3_t3_calc"))  g_e3_subtask = 2;
+        SendMessageW(g_hRadioExp3,     BM_SETCHECK, BST_CHECKED, 0);
+        SendMessageW(g_hRadioLexer,    BM_SETCHECK, BST_UNCHECKED, 0);
+        SendMessageW(g_hRadioParser,   BM_SETCHECK, BST_UNCHECKED, 0);
+        SendMessageW(g_hRadioSemantic, BM_SETCHECK, BST_UNCHECKED, 0);
+    } else if (strstr(path, "experiment4")) {
         g_analysis_mode = 0;
+        SendMessageW(g_hRadioExp3,     BM_SETCHECK, BST_UNCHECKED, 0);
         SendMessageW(g_hRadioLexer,    BM_SETCHECK, BST_CHECKED, 0);
         SendMessageW(g_hRadioParser,   BM_SETCHECK, BST_UNCHECKED, 0);
         SendMessageW(g_hRadioSemantic, BM_SETCHECK, BST_UNCHECKED, 0);
     } else if (strstr(path, "experiment5")) {
         g_analysis_mode = 1;
+        SendMessageW(g_hRadioExp3,     BM_SETCHECK, BST_UNCHECKED, 0);
         SendMessageW(g_hRadioLexer,    BM_SETCHECK, BST_UNCHECKED, 0);
         SendMessageW(g_hRadioParser,   BM_SETCHECK, BST_CHECKED, 0);
         SendMessageW(g_hRadioSemantic, BM_SETCHECK, BST_UNCHECKED, 0);
     } else {
         g_analysis_mode = 2;
+        SendMessageW(g_hRadioExp3,     BM_SETCHECK, BST_UNCHECKED, 0);
         SendMessageW(g_hRadioLexer,    BM_SETCHECK, BST_UNCHECKED, 0);
         SendMessageW(g_hRadioParser,   BM_SETCHECK, BST_UNCHECKED, 0);
         SendMessageW(g_hRadioSemantic, BM_SETCHECK, BST_CHECKED, 0);
@@ -388,15 +414,17 @@ static void layout_controls(int client_w, int client_h) {
     if (h) SetWindowPos(h, NULL, middle_x, mid_y,
                         MIDDLE_W, 50, SWP_NOZORDER | SWP_NOACTIVATE);
 
-    int ry = mid_y + 55;
-    SetWindowPos(g_hRadioLexer,    NULL, middle_x - 5, ry,
+    int ry = mid_y + 45;
+    SetWindowPos(g_hRadioExp3,     NULL, middle_x - 5, ry,
                  MIDDLE_W + 24, 22, SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_hRadioParser,   NULL, middle_x - 5, ry + 28,
+    SetWindowPos(g_hRadioLexer,    NULL, middle_x - 5, ry + 28,
                  MIDDLE_W + 24, 22, SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_hRadioSemantic, NULL, middle_x - 5, ry + 56,
+    SetWindowPos(g_hRadioParser,   NULL, middle_x - 5, ry + 56,
+                 MIDDLE_W + 24, 22, SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_hRadioSemantic, NULL, middle_x - 5, ry + 84,
                  MIDDLE_W + 24, 22, SWP_NOZORDER | SWP_NOACTIVATE);
 
-    int btn_y = ry + 100;
+    int btn_y = ry + 128;
     SetWindowPos(g_hRunButton, NULL, middle_x - 5, btn_y,
                  MIDDLE_W + 24, 32, SWP_NOZORDER | SWP_NOACTIVATE);
 
@@ -536,17 +564,21 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
                           400, 80, MIDDLE_W, 50,
                           hWnd, (HMENU)2002, hInst, NULL);
 
-            g_hRadioLexer = CreateWindowW(L"BUTTON", L"词法分析",
+            g_hRadioExp3 = CreateWindowW(L"BUTTON", L"实验三 Lex/Yacc",
                               WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
                               395, 140, MIDDLE_W + 24, 22,
+                              hWnd, (HMENU)IDC_RADIO_EXP3, hInst, NULL);
+            g_hRadioLexer = CreateWindowW(L"BUTTON", L"词法分析",
+                              WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+                              395, 168, MIDDLE_W + 24, 22,
                               hWnd, (HMENU)IDC_RADIO_LEXER, hInst, NULL);
             g_hRadioParser = CreateWindowW(L"BUTTON", L"语法分析",
                               WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-                              395, 168, MIDDLE_W + 24, 22,
+                              395, 196, MIDDLE_W + 24, 22,
                               hWnd, (HMENU)IDC_RADIO_PARSER, hInst, NULL);
             g_hRadioSemantic = CreateWindowW(L"BUTTON", L"语义分析",
                                 WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-                                395, 196, MIDDLE_W + 24, 22,
+                                395, 224, MIDDLE_W + 24, 22,
                                 hWnd, (HMENU)IDC_RADIO_SEMANTIC, hInst, NULL);
 
             SendMessageW(g_hRadioSemantic, BM_SETCHECK, BST_CHECKED, 0);
@@ -615,6 +647,9 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
             switch (id) {
                 case IDC_RUN_BUTTON:
                     if (code == BN_CLICKED) do_analysis();
+                    break;
+                case IDC_RADIO_EXP3:
+                    if (code == BN_CLICKED) g_analysis_mode = 3;
                     break;
                 case IDC_RADIO_LEXER:
                     if (code == BN_CLICKED) g_analysis_mode = 0;

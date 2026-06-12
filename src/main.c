@@ -7,6 +7,7 @@
 #include "lexer.h"
 #include "lr_parser.h"
 #include "semantic.h"
+#include "experiment3/e3_tasks.h"
 // ==================== 文件读取 ====================
 char* read_file(const char *filename) {
     FILE *fp = fopen(filename, "r");
@@ -37,7 +38,6 @@ void run_lexer_only(const char *source_code) {
     for (int i = 0; i < tl.count; i++) {
         print_token_for_lexer(&tl.tokens[i]);
     }
-    print_token_stats();
 
     if (has_lex_error) {
         printf("\n词法分析发现错误。\n");
@@ -55,7 +55,6 @@ void run_lexer_and_parser(const char *source_code) {
     for (int i = 0; i < tl.count; i++) {
         print_token_for_lexer(&tl.tokens[i]);
     }
-    print_token_stats();
 
     if (has_lex_error) {
         printf("词法分析发现错误，停止后续分析。\n");
@@ -63,7 +62,6 @@ void run_lexer_and_parser(const char *source_code) {
     }
 
     // 第二步：语法分析，消费TokenList
-    printf("\n========== LR 语法分析 ==========\n");
     ParseResult parse_result = lr_parse(&tl);
 
     if (!parse_result.success) {
@@ -83,7 +81,6 @@ void run_full_compiler(const char *source_code) {
     for (int i = 0; i < tl.count; i++) {
         print_token_for_lexer(&tl.tokens[i]);
     }
-    print_token_stats();
 
     if (has_lex_error) {
         printf("词法分析发现错误，停止后续分析。\n");
@@ -91,7 +88,6 @@ void run_full_compiler(const char *source_code) {
     }
 
     // 第二步：语法分析，消费TokenList
-    printf("\n========== LR 语法分析 ==========\n");
     ParseResult parse_result = lr_parse(&tl);
 
     if (!parse_result.success) {
@@ -239,6 +235,84 @@ void run_experiment(const Experiment *exp) {
     }
 }
 
+// ==================== 实验三：Lex和yacc的使用 ====================
+static const TestCase e3_tests[] = {
+    {"e3_t1_freq.txt",       "任务1-1：密文字符频率分析"},
+    {"e3_t2_tokenizer.txt",  "任务1-2：识别单词、数字和符号"},
+    {"e3_t3_calc.txt",       "任务1-3：具有加法和乘法功能的计算器"},
+};
+
+void run_experiment3(void) {
+    const char *dir = "tests/experiment3_lex_yacc";
+
+    printf("\n========================================\n");
+    printf("  实验三：Lex和yacc的使用\n");
+    printf("========================================\n");
+
+    // 创建输出目录
+    _mkdir("output");
+    _mkdir("output/experiment3_lex_yacc");
+
+    for (int i = 0; i < 3; i++) {
+        char filepath[512];
+        snprintf(filepath, sizeof(filepath), "%s/%s", dir, e3_tests[i].filename);
+
+        printf("\n--------------------------------------------------\n");
+        printf("[%d/3] %s: %s\n", i + 1, e3_tests[i].filename, e3_tests[i].description);
+        printf("--------------------------------------------------\n");
+
+        // 读取输入文件
+        char *input = read_file(filepath);
+        if (!input) {
+            printf("无法打开输入文件: %s\n", filepath);
+            continue;
+        }
+
+        printf("输入:\n%s\n", input);
+        printf("输出:\n");
+
+        // 构造输出路径
+        char out_path[512];
+        snprintf(out_path, sizeof(out_path), "output/experiment3_lex_yacc/%s",
+                 e3_tests[i].filename);
+
+        // 重定向stdout到文件
+        int saved_fd = _dup(1);
+        if (saved_fd != -1) {
+            if (!freopen(out_path, "w", stdout)) {
+                _close(saved_fd);
+                saved_fd = -1;
+            }
+        }
+
+        // 执行对应任务
+        switch (i) {
+            case 0: e3_task1_freq(input);       break;
+            case 1: e3_task2_tokenizer(input);  break;
+            case 2: e3_task3_calc(input);       break;
+        }
+
+        // 恢复stdout
+        if (saved_fd != -1) {
+            fflush(stdout);
+            _dup2(saved_fd, 1);
+            _close(saved_fd);
+            clearerr(stdout);
+            setvbuf(stdout, NULL, _IONBF, 0);
+
+            // 回显文件内容
+            char *result = read_file(out_path);
+            if (result) {
+                printf("%s", result);
+                free(result);
+            }
+            printf("[结果已保存到: %s]\n", out_path);
+        }
+
+        free(input);
+    }
+}
+
 // ==================== 运行全部实验 ====================
 void run_all_experiments(void) {
     for (int i = 0; i < NUM_EXPERIMENTS; i++) {
@@ -309,6 +383,7 @@ void show_menu(void) {
     printf("   PL/0 编译器 - 词法/语法/语义分析\n");
     printf("========================================\n");
     printf("\n选择测试用例 (按实验顺序):\n");
+    printf("  [0] 实验三：Lex和yacc的使用  (%d 个测试)\n", 3);
     printf("  [1] 实验四：词法分析  (%d 个测试)\n", experiments[0].count);
     printf("  [2] 实验五：语法分析  (%d 个测试)\n", experiments[1].count);
     printf("  [3] 实验六：语义分析  (%d 个测试)\n", experiments[2].count);
@@ -359,6 +434,7 @@ int main(int argc, char *argv[]) {
         char choice = line[0];
 
         switch (choice) {
+            case '0': run_experiment3();                  break;
             case '1': run_experiment(&experiments[0]); break;
             case '2': run_experiment(&experiments[1]); break;
             case '3': run_experiment(&experiments[2]); break;

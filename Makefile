@@ -3,9 +3,10 @@ CFLAGS = -Wall -g -Iinclude
 TARGET = pl0_compiler
 GUI_TARGET = pl0_gui
 
-SRCS = src/main.c src/lexer.c src/lr_parser.c src/semantic.c
+E3_SRC = src/experiment3/e3_tasks.c
+SRCS = src/main.c src/lexer.c src/lr_parser.c src/semantic.c $(E3_SRC)
 OBJS = $(SRCS:src/%.c=obj/%.o)
-GUI_SRCS = src/lexer.c src/lr_parser.c src/semantic.c src/gui.c
+GUI_SRCS = src/lexer.c src/lr_parser.c src/semantic.c src/gui.c $(E3_SRC)
 GUI_OBJS = $(GUI_SRCS:src/%.c=obj/%.o)
 
 all: $(TARGET) $(GUI_TARGET)
@@ -16,8 +17,8 @@ $(TARGET): $(OBJS)
 $(GUI_TARGET): $(GUI_OBJS)
 	$(CC) $(CFLAGS) -mwindows -o $(GUI_TARGET) $(GUI_OBJS)
 
-obj/%.o: src/%.c include/common.h src/lexer.h src/lr_parser.h src/semantic.h
-	@-mkdir obj 2>nul
+obj/%.o: src/%.c include/common.h src/lexer.h src/lr_parser.h src/semantic.h src/experiment3/e3_tasks.h
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
