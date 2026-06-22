@@ -1,5 +1,5 @@
 const a = 10;
-var   a, b, c;
+var   a, b c;
 
 procedure p;
     if a <= 10 then

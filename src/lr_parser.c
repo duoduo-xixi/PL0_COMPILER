@@ -256,6 +256,9 @@ ParseResult lr_parse(TokenList *token_list) {
     tl = token_list;
     tl->pos = 0;
 
+    printf("递归下降语法分析过程\n");
+    printf("--------------------\n");
+
     parse_program();
 
     if (parse_has_error) {
